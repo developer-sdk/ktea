@@ -3,6 +3,11 @@ package topics_page
 import (
 	"context"
 	"fmt"
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/table"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/log"
 	"ktea/kadmin"
 	"ktea/kontext"
 	"ktea/styles"
@@ -19,12 +24,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/table"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/log"
 )
 
 const name = "topics-page"
@@ -38,20 +37,21 @@ const (
 )
 
 type Model struct {
-	topics             []kadmin.ListedTopic
-	table              table.Model
-	border             *border.Model
-	shortcuts          []statusbar.Shortcut
-	tcb                *cmdbar.TableCmdsBar[string]
-	rows               []table.Row
-	lister             kadmin.TopicLister
-	ctx                context.Context
-	tableFocussed      bool
-	state              state
-	sortByCmdBar       *cmdbar.SortByCmdBar
-	goToTop            bool
-	navigator          tabs.TopicsTabNavigator
-	showInternalTopics bool
+	topics                  []kadmin.ListedTopic
+	table                   table.Model
+	border                  *border.Model
+	shortcuts               []statusbar.Shortcut
+	tcb                     *cmdbar.TableCmdsBar[string]
+	rows                    []table.Row
+	lister                  kadmin.TopicLister
+	ctx                     context.Context
+	tableFocussed           bool
+	state                   state
+	sortByCmdBar            *cmdbar.SortByCmdBar
+	goToTop                 bool
+	navigator               tabs.TopicsTabNavigator
+	hidedInternalTopicCount int
+	showInternalTopics      bool
 }
 
 func (m *Model) View(ktx *kontext.ProgramKtx, renderer *ui.Renderer) string {
@@ -183,9 +183,11 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 }
 
 func (m *Model) createRows() []table.Row {
+	m.hidedInternalTopicCount = 0
 	var rows []table.Row
 	for _, topic := range m.topics {
 		if !m.showInternalTopics && strings.HasPrefix(topic.Name, "__") {
+			m.hidedInternalTopicCount += 1
 			continue
 		}
 		if m.tcb.GetSearchTerm() != "" {
@@ -436,7 +438,7 @@ func New(
 	m.border = border.New(
 		border.WithInnerPaddingTop(),
 		border.WithTitleFn(func() string {
-			return border.KeyValueTitle("Total Topics", fmt.Sprintf(" %d/%d", len(m.rows), len(m.topics)), m.tableFocussed)
+			return border.KeyValueTitle("Total Topics", fmt.Sprintf(" %d/%d", len(m.rows), len(m.topics)-m.hidedInternalTopicCount), m.tableFocussed)
 		}))
 
 	var cmds []tea.Cmd
