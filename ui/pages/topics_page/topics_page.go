@@ -37,21 +37,21 @@ const (
 )
 
 type Model struct {
-	topics                  []kadmin.ListedTopic
-	table                   table.Model
-	border                  *border.Model
-	shortcuts               []statusbar.Shortcut
-	tcb                     *cmdbar.TableCmdsBar[string]
-	rows                    []table.Row
-	lister                  kadmin.TopicLister
-	ctx                     context.Context
-	tableFocussed           bool
-	state                   state
-	sortByCmdBar            *cmdbar.SortByCmdBar
-	goToTop                 bool
-	navigator               tabs.TopicsTabNavigator
-	hidedInternalTopicCount int
-	showInternalTopics      bool
+	topics                    []kadmin.ListedTopic
+	table                     table.Model
+	border                    *border.Model
+	shortcuts                 []statusbar.Shortcut
+	tcb                       *cmdbar.TableCmdsBar[string]
+	rows                      []table.Row
+	lister                    kadmin.TopicLister
+	ctx                       context.Context
+	tableFocussed             bool
+	state                     state
+	sortByCmdBar              *cmdbar.SortByCmdBar
+	goToTop                   bool
+	navigator                 tabs.TopicsTabNavigator
+	hiddenInternalTopicsCount int
+	showInternalTopics        bool
 }
 
 func (m *Model) View(ktx *kontext.ProgramKtx, renderer *ui.Renderer) string {
@@ -183,11 +183,11 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 }
 
 func (m *Model) createRows() []table.Row {
-	m.hidedInternalTopicCount = 0
+	m.hiddenInternalTopicsCount = 0
 	var rows []table.Row
 	for _, topic := range m.topics {
 		if !m.showInternalTopics && strings.HasPrefix(topic.Name, "__") {
-			m.hidedInternalTopicCount += 1
+			m.hiddenInternalTopicsCount += 1
 			continue
 		}
 		if m.tcb.GetSearchTerm() != "" {
@@ -302,7 +302,7 @@ func New(
 		{"Configs", "C-o"},
 		{"Delete", "F2"},
 		{"Sort", "F3"},
-		{"Show Internal Topic", "F4"},
+		{"Internal Topics", "F4"},
 		{"Refresh", "F5"},
 	}
 
@@ -438,7 +438,7 @@ func New(
 	m.border = border.New(
 		border.WithInnerPaddingTop(),
 		border.WithTitleFn(func() string {
-			return border.KeyValueTitle("Total Topics", fmt.Sprintf(" %d/%d", len(m.rows), len(m.topics)-m.hidedInternalTopicCount), m.tableFocussed)
+			return border.KeyValueTitle("Total Topics", fmt.Sprintf(" %d/%d", len(m.rows), len(m.topics)-m.hiddenInternalTopicsCount), m.tableFocussed)
 		}))
 
 	var cmds []tea.Cmd
