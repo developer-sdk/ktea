@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"ktea/kadmin"
 	"ktea/tests"
-	"ktea/ui/pages/nav"
 	"ktea/ui/tabs"
 	"strings"
 	"testing"
@@ -334,7 +333,7 @@ func TestTopicsPage(t *testing.T) {
 
 		assert.Equal(
 			t,
-			nav.ConsumeFormPageDetails{
+			tabs.ConsumeFormPageDetails{
 				Topic: &kadmin.ListedTopic{
 					Name:           "b-topic1",
 					PartitionCount: 1,
@@ -384,8 +383,8 @@ func TestTopicsPage(t *testing.T) {
 
 		assert.Equal(
 			t,
-			nav.ConsumePageDetails{
-				Origin: nav.OriginTopicsPage,
+			tabs.ConsumePageDetails{
+				Origin: tabs.OriginTopicsPage,
 				ReadDetails: kadmin.ReadDetails{
 					TopicName:       "b-topic1",
 					PartitionToRead: []int{0},
@@ -418,6 +417,7 @@ func TestTopicsPage(t *testing.T) {
 			Topics: []kadmin.ListedTopic{
 				{Name: "__consumer_offsets", PartitionCount: 50, Replicas: 3},
 				{Name: "__schema_registry", PartitionCount: 1, Replicas: 1},
+				{Name: "_schemas", PartitionCount: 1, Replicas: 1},
 				{Name: "a-topics", PartitionCount: 5, Replicas: 3},
 				{Name: "b-topics", PartitionCount: 3, Replicas: 2},
 				{Name: "c-topics", PartitionCount: 1, Replicas: 1},
@@ -425,7 +425,7 @@ func TestTopicsPage(t *testing.T) {
 		})
 
 		page.View(tests.NewKontext(), tests.Renderer)
-		assert.Equal(t, 2, page.hiddenInternalTopicsCount)
+		assert.Equal(t, 3, page.hiddenInternalTopicsCount)
 
 		page.Update(tests.Key(tea.KeyF4))
 		page.View(tests.NewKontext(), tests.Renderer)
@@ -433,6 +433,6 @@ func TestTopicsPage(t *testing.T) {
 
 		page.Update(tests.Key(tea.KeyF4))
 		page.View(tests.NewKontext(), tests.Renderer)
-		assert.Equal(t, 2, page.hiddenInternalTopicsCount)
+		assert.Equal(t, 3, page.hiddenInternalTopicsCount)
 	})
 }

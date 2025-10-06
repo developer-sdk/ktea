@@ -8,11 +8,13 @@ import (
 	"ktea/styles"
 	"ktea/ui"
 	"ktea/ui/components/border"
+	"ktea/ui/components/cmdbar"
 	"ktea/ui/components/statusbar"
 	"ktea/ui/pages"
-	"ktea/ui/pages/nav"
 	"ktea/ui/tabs"
+	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
@@ -32,7 +34,7 @@ type Model struct {
 	noRecordsAvailable bool
 	noRecordsFound     bool
 	topic              *kadmin.ListedTopic
-	origin             nav.Origin
+	origin             tabs.Origin
 	navigator          tabs.TopicsTabNavigator
 }
 
@@ -46,12 +48,16 @@ func (m *Model) View(ktx *kontext.ProgramKtx, renderer *ui.Renderer) string {
 	} else if m.noRecordsFound {
 		views = append(views, styles.CenterText(ktx.WindowWidth, ktx.AvailableHeight).
 			Render("👀 No records found for the given criteria"))
-	} else if len(m.rows) > 0 {
+	} else {
+		keyCol := int(float64(ktx.WindowWidth) * 0.4)
+		tsCol := int(float64(ktx.WindowWidth) * 0.2)
+		PCol := int(float64(ktx.WindowWidth) * 0.2)
+		oCol := ktx.WindowWidth - keyCol - tsCol - PCol - 10
 		m.table.SetColumns([]table.Column{
-			{Title: "Key", Width: int(float64(ktx.WindowWidth-9) * 0.5)},
-			{Title: "Timestamp", Width: int(float64(ktx.WindowWidth-9) * 0.30)},
-			{Title: "Partition", Width: int(float64(ktx.WindowWidth-9) * 0.10)},
-			{Title: "Offset", Width: int(float64(ktx.WindowWidth-9) * 0.10)},
+			{Title: m.cmdBar.sortByCBar.PrefixSortIcon("Key"), Width: keyCol},
+			{Title: m.cmdBar.sortByCBar.PrefixSortIcon("Timestamp"), Width: tsCol},
+			{Title: m.cmdBar.sortByCBar.PrefixSortIcon("Partition"), Width: PCol},
+			{Title: m.cmdBar.sortByCBar.PrefixSortIcon("Offset"), Width: oCol},
 		})
 		m.table.SetRows(m.rows)
 		m.table.SetWidth(ktx.WindowWidth - 2)
@@ -66,21 +72,15 @@ func (m *Model) View(ktx *kontext.ProgramKtx, renderer *ui.Renderer) string {
 func (m *Model) Update(msg tea.Msg) tea.Cmd {
 	var cmds []tea.Cmd
 
-	cmd := m.cmdBar.Update(msg)
-	cmds = append(cmds, cmd)
-
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if msg.String() == "esc" {
 			m.cancelConsumption()
-			if m.readDetails.StartPoint == kadmin.Live {
-				return ui.PublishMsg(nav.LoadTopicsPageMsg{})
-			}
-			if m.origin == nav.OriginTopicsPage {
+			if m.readDetails.StartPoint == kadmin.Live || m.origin == tabs.OriginTopicsPage {
 				return m.navigator.ToTopicsPage()
 			} else {
 				return m.navigator.ToConsumeFormPage(
-					nav.ConsumeFormPageDetails{
+					tabs.ConsumeFormPageDetails{
 						ReadDetails: &m.readDetails,
 						Topic:       m.topic,
 					},
@@ -89,20 +89,19 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 		} else if msg.String() == "f2" {
 			m.cancelConsumption()
 			m.consuming = false
-			//cmds = append(cmds, ui.PublishMsg(ConsumptionEndedMsg{}))
+			cmds = append(cmds, ui.PublishMsg(kadmin.ConsumptionEndedMsg{}))
 		} else if msg.String() == "enter" {
-			if len(m.records) > 0 {
-				selectedRow := m.records[len(m.records)-m.table.Cursor()-1]
-				m.consuming = false
-				return ui.PublishMsg(nav.LoadRecordDetailPageMsg{
-					Record:    &selectedRow,
-					TopicName: m.readDetails.TopicName,
-				})
+			if !m.cmdBar.IsFocussed() {
+				if len(m.records) > 0 {
+					selectedRow := m.records[len(m.records)-m.table.Cursor()-1]
+					m.consuming = false
+					return m.navigator.ToRecordDetailsPage(
+						tabs.LoadRecordDetailPageMsg{
+							Record:    &selectedRow,
+							TopicName: m.readDetails.TopicName,
+						})
+				}
 			}
-		} else {
-			t, cmd := m.table.Update(msg)
-			m.table = &t
-			cmds = append(cmds, cmd)
 		}
 	case kadmin.EmptyTopicMsg:
 		m.noRecordsAvailable = true
@@ -115,32 +114,85 @@ func (m *Model) Update(msg tea.Msg) tea.Cmd {
 		cmds = append(cmds, msg.AwaitRecord)
 	case kadmin.ConsumptionEndedMsg:
 		m.consuming = false
-		return nil
 	case kadmin.ConsumerRecordReceived:
+		m.records = append(m.records, msg.Records...)
+		cmds = append(cmds, msg.AwaitNextRecord)
+	}
+
+	cmd := m.cmdBar.Update(msg)
+	cmds = append(cmds, cmd)
+
+	m.rows = m.createRows()
+
+	// make sure table navigation is off when the cmdbar is focussed
+	if !m.cmdBar.IsFocussed() {
+		t, cmd := m.table.Update(msg)
+		m.table = &t
+		cmds = append(cmds, cmd)
+	}
+
+	return tea.Batch(cmds...)
+}
+
+func (m *Model) createRows() []table.Row {
+	var rows []table.Row
+	for _, rec := range m.records {
+
 		var key string
-		for _, rec := range msg.Record {
-			if rec.Key == "" {
-				key = "<null>"
-			} else {
-				key = rec.Key
-			}
-			m.records = append(m.records, rec)
-			m.rows = append(
-				[]table.Row{
-					{
+		if rec.Key == "" {
+			key = "<null>"
+		} else {
+			key = rec.Key
+		}
+
+		if m.cmdBar.GetSearchTerm() != "" {
+			if strings.Contains(strings.ToLower(rec.Key), strings.ToLower(m.cmdBar.GetSearchTerm())) ||
+				strings.Contains(strings.ToLower(rec.Payload.Value), strings.ToLower(m.cmdBar.GetSearchTerm())) {
+				rows = append(
+					rows,
+					table.Row{
 						key,
 						rec.Timestamp.Format("2006-01-02 15:04:05"),
 						strconv.FormatInt(rec.Partition, 10),
 						strconv.FormatInt(rec.Offset, 10),
 					},
+				)
+			}
+		} else {
+			rows = append(
+				rows,
+				table.Row{
+					key,
+					rec.Timestamp.Format("2006-01-02 15:04:05"),
+					strconv.FormatInt(rec.Partition, 10),
+					strconv.FormatInt(rec.Offset, 10),
 				},
-				m.rows...,
 			)
 		}
-		return msg.AwaitNextRecord
 	}
 
-	return tea.Batch(cmds...)
+	sort.SliceStable(rows, func(i, j int) bool {
+		var col int
+		switch m.cmdBar.sortByCBar.SortedBy().Label {
+		case "Key":
+			col = 0
+		case "Timestamp":
+			col = 1
+		case "Partition":
+			col = 2
+		case "Offset":
+			col = 3
+		default:
+			panic(fmt.Sprintf("unexpected sort label: %s", m.cmdBar.sortByCBar.SortedBy().Label))
+		}
+
+		if m.cmdBar.sortByCBar.SortedBy().Direction == cmdbar.Asc {
+			return rows[i][col] < rows[j][col]
+		}
+		return rows[i][col] > rows[j][col]
+	})
+
+	return rows
 }
 
 func (m *Model) Shortcuts() []statusbar.Shortcut {
@@ -150,13 +202,20 @@ func (m *Model) Shortcuts() []statusbar.Shortcut {
 			{"Stop consuming", "F2"},
 			{"Go Back", "esc"},
 		}
-	} else if m.noRecordsAvailable {
+	} else if m.noRecordsAvailable || m.noRecordsFound {
 		return []statusbar.Shortcut{
 			{"Go Back", "esc"},
+		}
+	} else if m.cmdBar.IsSorting() {
+		return []statusbar.Shortcut{
+			{"Cancel Sorting", "F3"},
+			{"Select Sorting Column", "←/→/h/l"},
+			{"Apply Sorting Column", "enter"},
 		}
 	} else {
 		return []statusbar.Shortcut{
 			{"View Record", "enter"},
+			{"Sort", "F3"},
 			{"Go Back", "esc"},
 		}
 	}
@@ -170,7 +229,7 @@ func New(
 	reader kadmin.RecordReader,
 	readDetails kadmin.ReadDetails,
 	topic *kadmin.ListedTopic,
-	origin nav.Origin,
+	origin tabs.Origin,
 	navigator tabs.TopicsTabNavigator,
 ) (pages.Page, tea.Cmd) {
 	m := &Model{}
@@ -187,8 +246,8 @@ func New(
 	m.navigator = navigator
 	m.origin = origin
 
-	ctx, cancelFunc := context.WithCancel(context.Background())
-	m.cancelConsumption = cancelFunc
+	ctx, cancelFn := context.WithCancel(context.Background())
+	m.cancelConsumption = cancelFn
 
 	m.border = border.New(
 		border.WithInnerPaddingTop(),

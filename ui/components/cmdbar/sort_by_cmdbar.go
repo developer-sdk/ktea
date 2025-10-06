@@ -22,7 +22,7 @@ type SortByCmdBar struct {
 	sorts                []SortLabel
 	selectedIdx          int
 	activeIdx            int
-	active               bool
+	Active               bool
 	sortSelectedCallback SortSelectedCallback
 }
 
@@ -101,14 +101,14 @@ func (m *SortByCmdBar) Update(msg tea.Msg) (bool, tea.Msg, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "f3":
-			m.active = !m.active
+			m.Active = !m.Active
 		case "h", "left":
 			m.prevElem()
 		case "l", "right":
 			m.nextElem()
 		case "esc":
-			m.active = false
-			return m.active, nil, nil
+			m.Active = false
+			return m.Active, nil, nil
 		case "enter":
 			if m.activeIdx == m.selectedIdx {
 				m.sorts[m.selectedIdx].Direction = !m.sorts[m.selectedIdx].Direction
@@ -120,7 +120,7 @@ func (m *SortByCmdBar) Update(msg tea.Msg) (bool, tea.Msg, tea.Cmd) {
 			}
 		}
 	}
-	return m.active, nil, nil
+	return m.Active, nil, nil
 }
 
 func (m *SortByCmdBar) Shortcuts() []statusbar.Shortcut {
@@ -158,14 +158,27 @@ func (m *SortByCmdBar) PrefixSortIcon(title string) string {
 		return lipgloss.NewStyle().
 			Foreground(lipgloss.Color(styles.ColorPink)).
 			Bold(true).
-			Render(sb.Direction.String()) + " " + title
+			Render(sb.Direction.String()) + " " + lipgloss.NewStyle().Bold(true).Render(title)
 	}
-	return title
+	return lipgloss.NewStyle().Bold(true).Render(title)
 }
 
 func WithSortSelectedCallback(callback SortSelectedCallback) SortByCmdBarOption {
 	return func(bar *SortByCmdBar) {
 		bar.sortSelectedCallback = callback
+	}
+}
+
+func WithInitialSortColumn(column string, direction Direction) SortByCmdBarOption {
+	return func(bar *SortByCmdBar) {
+		for i, sort := range bar.sorts {
+			if sort.Label == column {
+				bar.selectedIdx = i
+				bar.activeIdx = i
+				bar.sorts[i].Direction = direction
+				return
+			}
+		}
 	}
 }
 
@@ -175,7 +188,7 @@ func NewSortByCmdBar(
 ) *SortByCmdBar {
 	bar := SortByCmdBar{
 		sorts:  sorts,
-		active: false,
+		Active: false,
 	}
 
 	for _, option := range options {

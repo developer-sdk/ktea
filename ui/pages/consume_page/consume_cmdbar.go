@@ -14,11 +14,13 @@ import (
 type ConsumptionCmdBar struct {
 	notifierWidget cmdbar.CmdBar
 	active         cmdbar.CmdBar
+	sortByCBar     *cmdbar.SortByCmdBar
+	searchCBar     *cmdbar.SearchCmdBar
 }
 
 func (c *ConsumptionCmdBar) View(ktx *kontext.ProgramKtx, renderer *ui.Renderer) string {
 	if c.active != nil {
-		return renderer.Render(c.active.View(ktx, renderer))
+		return c.active.View(ktx, renderer)
 	}
 	return renderer.Render("")
 }
@@ -36,13 +38,49 @@ func (c *ConsumptionCmdBar) Update(msg tea.Msg) tea.Cmd {
 	}
 
 	switch msg := msg.(type) {
-	case kadmin.ReadingStartedMsg:
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "/":
+			active, _, cmd := c.searchCBar.Update(msg)
+			if !active {
+				c.active = nil
+			} else {
+				c.active = c.searchCBar
+				c.sortByCBar.Active = false
+			}
+			return cmd
+		case "f3":
+			active, _, cmd := c.sortByCBar.Update(msg)
+			if !active {
+				c.active = nil
+			} else {
+				c.active = c.sortByCBar
+				c.searchCBar.Hide()
+			}
+			return cmd
+		default:
+			if c.active != nil {
+				active, _, cmd := c.active.Update(msg)
+				if !active {
+					c.active = nil
+				}
+				return cmd
+			}
+		}
+	}
+
+	switch msg := msg.(type) {
+	case *kadmin.ReadingStartedMsg:
 		c.active = c.notifierWidget
 		_, _, cmd := c.active.Update(msg)
 		return cmd
 	}
 
 	return nil
+}
+
+func (c *ConsumptionCmdBar) IsFocussed() bool {
+	return c.active != nil && c.active.IsFocussed()
 }
 
 func (c *ConsumptionCmdBar) Shortcuts() []statusbar.Shortcut {
@@ -52,8 +90,16 @@ func (c *ConsumptionCmdBar) Shortcuts() []statusbar.Shortcut {
 	return c.active.Shortcuts()
 }
 
+func (c *ConsumptionCmdBar) GetSearchTerm() string {
+	return c.searchCBar.GetSearchTerm()
+}
+
+func (c *ConsumptionCmdBar) IsSorting() bool {
+	return c.active == c.sortByCBar
+}
+
 func NewConsumptionCmdbar() *ConsumptionCmdBar {
-	readingStartedNotifier := func(msg kadmin.ReadingStartedMsg, m *notifier.Model) (bool, tea.Cmd) {
+	readingStartedNotifier := func(msg *kadmin.ReadingStartedMsg, m *notifier.Model) (bool, tea.Cmd) {
 		return true, m.SpinWithLoadingMsg("Consuming")
 	}
 	c := func(msg nav.LoadCachedConsumptionPageMsg, m *notifier.Model) (bool, tea.Cmd) {
@@ -77,7 +123,32 @@ func NewConsumptionCmdbar() *ConsumptionCmdBar {
 	cmdbar.WithMsgHandler(notifierCmdBar, emptyTopicMsgHandler)
 	cmdbar.WithMsgHandler(notifierCmdBar, noRecordFoundMsgHandler)
 	cmdbar.WithMsgHandler(notifierCmdBar, c)
+
+	sortByCmdBar := cmdbar.NewSortByCmdBar(
+		[]cmdbar.SortLabel{
+			{
+				Label:     "Key",
+				Direction: cmdbar.Asc,
+			},
+			{
+				Label:     "Timestamp",
+				Direction: cmdbar.Desc,
+			},
+			{
+				Label:     "Partition",
+				Direction: cmdbar.Desc,
+			},
+			{
+				Label:     "Offset",
+				Direction: cmdbar.Desc,
+			},
+		},
+		cmdbar.WithInitialSortColumn("Timestamp", cmdbar.Desc),
+	)
+
 	return &ConsumptionCmdBar{
 		notifierWidget: notifierCmdBar,
+		sortByCBar:     sortByCmdBar,
+		searchCBar:     cmdbar.NewSearchCmdBar("Search by key or record value"),
 	}
 }
